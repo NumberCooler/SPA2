@@ -1580,7 +1580,23 @@ function TypeInstance() {
 	this.object = false; this.dom = false; this.reference = false;
 }
 Type = (function () {
-	var ar = ["Boolean]", "String]", "Number]", "Array]", "Object]", "RegExp]", "Date]", "Function]", "Error]", "Event]", "MouseEvent]", "KeyboardEvent]", "global]"], f = Object.prototype.toString, s = "[object ";
+	var ar = [
+		"Boolean]", 
+		"String]", 
+		"Number]", 
+		"Array]", 
+		"Object]", 
+		"RegExp]", 
+		"Date]", 
+		"Function]", 
+		"Error]", 
+		"Event]", 
+		"MouseEvent]", 
+		"KeyboardEvent]", 
+		"global]",
+		"AsyncFunction]", // 13
+		"Promise]" // 14
+	], f = Object.prototype.toString, s = "[object ";
 	Type = function () {
 		if (arguments.length == 0) throw "must pass something";
 		var ret = new TypeInstance(), a = arguments[0];
@@ -1607,13 +1623,10 @@ Type = (function () {
 	t.isObject = f0(ar[4]); t.isRegExp = f0(ar[5]);
 	t.isDate = f0(ar[6]); t.isFunction = f0(ar[7]);
 	t.isError = f0(ar[8]);
-	t.is = function (a, b) {
-
-	}
+	t.isAsync = f0(ar[13]);
+	t.isPromise = f0(ar[14]);
 	return t;
 })();
-
-
 
 var BrowserTools = {};
 
@@ -2468,6 +2481,7 @@ Class.prototype.create = function (c, opt, mode) {
 	return ret_instance;
 
 };
+
 Class.prototype.finish = function (instance, opt) {
 	var name = instance.internal.type;
 	var pathName = name.split(".");
@@ -3246,8 +3260,20 @@ DOMElementCount = Class.create("XMath.UnitCounter");
 
 TabIndexCount = Class.create("XMath.UnitCounter");
 
-
-
+var ____HtmlTags2 = [
+	"a", "abbr", "acronym", "address", "applet", "area", "article", "aside", "audio", "b", "base", "basefont",
+	"bdi", "bdo", "bgsound", "big", "blink", "blockquote", "body", "br", "button", "caption", "canvas", "center", "cite", "code", "col",
+	"colgroup", "command", "content", "data", "datalist", "dd", "del", "details", "dfn", "dialog", "dir", "div", "dl", "dt", "element", "em", "embed",
+	"fieldset", "figcaption", "figure", "font", "footer", "form", "frame", "frameset", "h1", "h2", "h3",
+	"h4", "h5", "h6", "head", "header", "hgroup", "hr", "html", "i", "iframe", "image", "img", "input", "ins", "isindex", "kbd", "keygen", "label",
+	"legend", "li", "listing", "link", "main", "map", "mark", "marquee", "menu", "menuitem", "meta", "meter", "multicol", "nav", "nextid", "nobr", "noframes", "noscript",
+	"object", "ol", "optgroup", "option", "output", "p", "param", "picture", "plaintext", "pre", "progress", "q", "rb", "rp", "rt", "rtc", "ruby",
+	"s", "samp", "script", "section", "select", "shadow", "slot", "small", "source", "spacer", "span", "strike", "strong", "style", "sub",
+	"summary", "sup", "table", "tbody", "td", "template", "textarea", "tfoot", "th", "thead", "time", "title", "tr", "track", "tt", "u", "ul",
+	"var", "video", "wbr", "xmp",
+	"svg", "path"
+];
+/*
 var ____HtmlTags2 = [
 	"a", "abbr", "acronym", "address", "applet", "area", "article", "aside", "audio", "b", "base", "basefont",
 	"bdi", "bdo", "big", "blockquote", "body", "br", "button", "canvas", "center", "cite", "code", "col",
@@ -3262,6 +3288,7 @@ var ____HtmlTags2 = [
 
 	"svg", "path"
 ];
+*/
 var ____SvgTags2 = [
 	"svg",
 	"altGlyph",
@@ -4732,7 +4759,13 @@ Class.define("Component", {
 		}
 		var newPacketAsync = async function (parent, pattern, options) {
 			//pattern = pattern.split("\r").join("").split("\n").join("").split("\t").join(" ");
-			options = options || {};
+			//console.log(pattern);
+			options = options || {
+				runMacro : true
+			};
+			if(!("runMacro" in options)) {
+				options.runMacro = true;
+			}
 			var ret = {
 				el: {},
 				$: {},
@@ -4894,10 +4927,10 @@ Class.define("Component", {
 										} else {
 											//get on lazy component, require schema to be defined on load component at ' tag.tagName == "Component" '
 											var code = [`
-											  (async ()=>{
+											  var ret_async = (async ()=>{
 												  var code = "";
 												  var _t1 = this;
-												  async function sandbox1(schema,self) {
+												  async function sandbox1(schema,code) {
 													  //console.log("RUNNING");
 												  `];
 											for (var key in ret.el) {
@@ -4941,14 +4974,14 @@ Class.define("Component", {
 													  //console.log("RUNNED");
 												  }
 												  if(options && "context" in options) {
-													  //console.log("OK1");
+													  //console.log("OK1 IN SCRIPT EVAL");
 													  //this.module = { exports : {} };
-													  
-													  await sandbox1.apply(options.context,[ret,pattern]);
+													  //console.log(options.context,value);
+													  ret_async =  sandbox1.apply(options.context,[ret,value]);
 													  //console.log("OK2");
 												  } else {
 													  //console.log("OK3");
-													  await sandbox1(ret,pattern);
+													  ret_async = sandbox1(ret,pattern);
 													  //console.log("OK4");
 												  }
 												  if(options && "context" in options) {
@@ -4956,16 +4989,23 @@ Class.define("Component", {
 												  } else {
 													  //console.log("WOUT CONTEXT",ret);
 												  }
+												  return ret_async;
 												  })();
+
 											  `);
+											code = code.join("");
+											//console.log(code,options.context);
 											try {
-												code = code.join("");
+												
 												//console.log(code);
 												eval(code);
+												await ret_async;
 											} catch (e) {
+												console.log(code);
 												console.log(e);
+												throw e;
 											}
-
+											//console.log("after script eval",value);
 											//pel.appendChild( document.createTextNode(""+value));	
 										}
 									} else {
@@ -5174,10 +5214,13 @@ Class.define("Component", {
 							// this feature has backend dependencies.
 							if (tag.tagName == "Component" && t.name == "src") {
 								await (async () => {
+									//console.log("EVAL COMPONENT SRC", t.value);
 									return new Promise((resolve, reject) => {
 										try {
+											
 											Import({ method: "GET", url: t.value })
 												.done(async (data) => {
+													//console.log("EVAL COMPONENT SRC", data);
 													var context = { module: { exports: {} }, props: props };
 
 													if (options && "context" in options && "bind" in props) {
@@ -5188,23 +5231,11 @@ Class.define("Component", {
 													// 1) evaluate ${} in the downloaded content, make parent, props, this available could handle programmatically html on components
 													// hard to eval cause it may have `` inside script tag
 													// 2) create new components <if> <endif> <for> <endfor> <while> (bullshit?)
-													data = data.split("\\`").join("\\\\`"); // to eval inside a ``
-													data = data.split("`").join("\\`"); // to eval a normal `
-
-													data = data.split("\\$\\`").join("`"); // inside ${} -> use \$\` to eval ``
-													data = data.split("\\`\\$").join("`"); // inside ${} -> use \`\$ to eval ``
-
-													var code = `
-													  code = (function(props,parent) {
-														  var script = "<" + "script>";
-														  var endscript = "</" + "script>";
-														  return \`${data}\`;
-													  }).apply(context,[props,context.parent]);
-												  `;
+													
 
 													//console.log(">>OK LOADED DYNAMIC COMPONENT ASYNC", code);
-													eval(code);
-													var schema = await elc.elementSetPacketAsync(code, { context: context });
+													//eval(code);
+													var schema = await elc.elementSetPacketAsync(data, { context: context });
 													//console.log(">>OK LOADED DYNAMIC COMPONENT CONTEXT ASYNC", context);
 													ret.exports[id] = context.module.exports;
 													ret.schema[id] = schema;
@@ -5229,6 +5260,7 @@ Class.define("Component", {
 										}
 									});
 								})();
+								//console.log("after component src eval");
 							}
 							if (tag.tagName.toUpperCase() == "SCRIPT" && t.name.toLowerCase() == "src") {
 								waitAsync = true;
@@ -5353,17 +5385,30 @@ Class.define("Component", {
 								}
 							}
 							text = "";
-						} else if (ch == "{" && (stack.length > 0 && stack[stack.length - 1].tagName.toLowerCase() != "script" || true)) {
+						} else if (ch == "{" && (stack.length > 0 && (()=>{
+							//console.log(ch,pattern.substring(x,x+10));
+							var last = stack.length-1;
+							while(last>=0) {
+								if( stack[last].tagName.toLowerCase() == "script" ) {
+									//console.log("FALSE",pattern.substring(x,x+10));
+									return false;
+								}
+								last--;
+							}
+							return true;
+						 })() ) || (ch == "{" && stack.length == 0)) {
 							
 							// check for prints with js expression
-							//console.log("not in tag", stack[stack.length - 1].tagName.toLowerCase() != "script");
+							//console.log("not in tag");
 							var backup = x;
 							var data = null, script = null, target = null;
 							try {
+								if(!options.runMacro) throw new Error("not allowed macros.");
 								data = JsExpression.parse(pattern.substring(x));
 								var xorig = x;
 								x = pattern.length - data[1].length - 1;
 								script = data[0];
+								//console.log(">>",stack[stack.length - 1].tagName.toLowerCase(),script,pattern);
 								target = null;
 								eval(`
 									function setAttrib1() {
@@ -5406,21 +5451,27 @@ Class.define("Component", {
 								}
 							} catch (e) {
 								if (e.message == "Expected \"{{\" but \"{\" found.") {
+									//console.log("not replace tag");
+									//console.log(pattern.substring(x,x+20));
 									x = backup;
 									text += ch;
+								} else if(e.message =="not allowed macros.") {
+									text += ch;
+									x = backup;
 								} else {
 									console.log("data", data);
 									console.log("script", script);
 									console.log("target", target);
 									console.error(e);
 									text += ch;
-									x = backup
+									x = backup;
 
-									throw "FAIL2";
-								}
+
+									//throw "FAIL2";
+								} 
 							}
 						} else {
-
+							//console.log(ch);
 							text += ch;
 						}
 					} else {
@@ -5756,11 +5807,13 @@ Class.define("Component", {
 			return this.elementPushPacket.apply(this, args);
 		},
 		elementSetPacketAsync: async function () { // = -> means replace
+			
 			var args = [];
 			for (var x = 0; x < arguments.length; x++) args.push(arguments[x]);
 			this.elementsClear();
 			//console.log("ELEMENT SET PACKET ASYNC",args);
 			return await this.elementPushPacketAsync.apply(this, args);
+			
 		},
 		elementRemove: function (name) {
 			var itemA = this.varGet(name);
