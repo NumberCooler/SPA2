@@ -2806,7 +2806,7 @@ Class.define("WithEvents", {
 			i.data[event][mode].splice(0, i.data[event][mode].length);
 			return true;
 		},
-		emit: function (event, args) {
+		emit: async function (event, args) {
 			//console.log("emit0",this);
 			//console.log("emit",event,args);
 
@@ -2814,31 +2814,48 @@ Class.define("WithEvents", {
 			//console.log(i.data);
 			if (event in i.data) {
 				for (var x = 0; x < i.data[event].capture.length; x++) {
-					if (Object.prototype.toString.apply(i.data[event].capture[x]) != "[object Function]") {
-						console.log(i.data[event].capture[x]);
-					}
-					if (!i.data[event].capture[x].apply(this, args)) {
-						return false;
+					if( Object.prototype.toString.apply(i.data[event].capture[x]) == "[object AsyncFunction]" ) {
+						var val = await i.data[event].capture[x].apply(this, args);
+						if(val === false) return false;
+					} else {
+						if (!i.data[event].capture[x].apply(this, args)) {
+							return false;
+						}
 					}
 				}
 			}
 			// emit bottomHit
 			if (("bottomHit" + event) in i.data) {
 				for (var x = 0; x < i.data["bottomHit" + event].capture.length; x++) {
-					if (!i.data["bottomHit" + event].capture[x].apply(this, args)) {
-						return false;
+					if( Object.prototype.toString.apply(i.data["bottomHit" + event].capture[x]) == "[object AsyncFunction]" ) {
+						var val = await i.data["bottomHit" + event].capture[x].apply(this, args);
+						if(val === false) return false;
+					} else {
+						if (!i.data["bottomHit" + event].capture[x].apply(this, args)) {
+							return false;
+						}
 					}
 				}
 				for (var x = i.data["bottomHit" + event].bubble.length - 1; x >= 0; x--) {
-					if (!i.data["bottomHit" + event].bubble[x].apply(this, args)) {
-						return false;
+					if( Object.prototype.toString.apply(i.data["bottomHit" + event].capture[x]) == "[object AsyncFunction]" ) {
+						var val = await i.data["bottomHit" + event].bubble[x].apply(this, args);
+						if(val === false) return false;
+					} else {
+						if (!i.data["bottomHit" + event].bubble[x].apply(this, args)) {
+							return false;
+						}
 					}
 				}
 			}
 			if (event in i.data) {
 				for (var x = i.data[event].bubble.length - 1; x >= 0; x--) {
-					if (!i.data[event].bubble[x].apply(this, args)) {
-						return false;
+					if( Object.prototype.toString.apply(i.data[event].bubble[x]) == "[object AsyncFunction]" ) {
+						var val = await i.data[event].bubble[x].apply(this, args);
+						if(val === false) return false;
+					} else {
+						if (!i.data[event].bubble[x].apply(this, args)) {
+							return false;
+						}
 					}
 				}
 			}
@@ -3446,7 +3463,7 @@ Class.define("WithDOMNode", {
 	}
 });
 
-
+ComponentCache = {};
 Class.define("Component", {
 	from: ["WithDOMNode"]
 	, ctor: function () {
@@ -4130,6 +4147,7 @@ Class.define("Component", {
 						var id = [""];
 						var check = false;
 						var value = "";
+						var value2 = "";
 						var has_src = false;
 						var src = "";
 						var convert = false;
@@ -4146,7 +4164,10 @@ Class.define("Component", {
 							}
 							if (tag.tagName == "text" && tag.attributes[x].name == "value") {
 								//value = tag.attributes[x].value;
+
 								value = BrowserTools.decodeEntities(tag.attributes[x].value);
+								value2 = tag.attributes[x].value;
+
 							}
 						}
 						var tmp = attributes_to_delete.length;
@@ -4172,7 +4193,7 @@ Class.define("Component", {
 
 										} else if (pel.getAttribute("src") != null) {
 
-											pel.appendChild(document.createTextNode("" + value));
+											pel.appendChild(document.createTextNode("" + value2));
 
 										} else {
 											//get on lazy component, require schema to be defined on load component at ' tag.tagName == "Component" '
@@ -4443,41 +4464,78 @@ Class.define("Component", {
 							var t = tag.attributes[x];
 							// this feature has backend dependencies.
 							if (tag.tagName == "Component" && t.name == "src") {
-								(async () => {
-									try {
-										Import({ method: "GET", url: t.value })
-											.done((data) => {
-												var context = { module: { exports: {} }, props: props };
-												if (options && "context" in options && "bind" in props) {
-													context.parent = options.context;
-												} else {
-													context.parent = null;
-												}
-												data = data.split("\\").join("\\\\");
-												data = data.split("`").join("\\`");
-												var code = `
-												  code = (function(props,parent) {
-													  var script = "<" + "script>";
-													  var endscript = "</" + "script>";
-													  return \`${data}\`;
-												  }).apply(context,[props,context.parent]);
-											  `;
-												//console.log("1",code);
-												console.log(">>OK LOADED DYNAMIC COMPONENT SYNC", code);
-												eval(code);
-												var schema = elc.elementSetPacket(code, { context: context });
-												console.log(">>OK LOADED DYNAMIC COMPONENT CONTEXT SYNC", context);
-												ret.exports[id] = context.module.exports;
-												ret.schema[id] = schema;
-											})
-											.fail((e) => {
-												alert("" + e);
-											})
-											.send();
-									} catch (e) {
-										alert("" + e);
+								var data = null;
+								if(!(t.value in ComponentCache)) {
+									(async () => {
+										try {
+											var data = await new Promise((resolve,reject)=>{
+												Import({ method: "GET", url: t.value })
+													.done((data) => {
+														ComponentCache[t.value] = data;
+														console.log("LOADED CACHE")
+														resolve(data);
+													})
+													.fail((e) => {
+														alert("error 3" + e);
+													})
+													.send();
+												});
+											var context = { module: { exports: {} }, props: props };
+											if (options && "context" in options && "bind" in props) {
+												context.parent = options.context;
+											} else {
+												context.parent = null;
+											}
+											data = data.split("\\").join("\\\\");
+											data = data.split("`").join("\\`");
+											var code = `
+											code = (function(props,parent) {
+												var script = "<" + "script>";
+												var endscript = "</" + "script>";
+												return \`${data}\`;
+											}).apply(context,[props,context.parent]);
+										`;
+											//console.log("1",code);
+											console.log(">>OK LOADED DYNAMIC COMPONENT SYNC", code);
+											eval(code);
+											console.log(code)
+											var schema = elc.elementSetPacket(code, { context: context });
+											console.log(">>OK LOADED DYNAMIC COMPONENT CONTEXT SYNC", context);
+											ret.exports[id] = context.module.exports;
+											ret.schema[id] = schema;
+										} catch (e) {
+											alert("error 4" + e);
+										}
+									})();
+
+								} else {
+									data = ComponentCache[t.value];
+
+									var context = { module: { exports: {} }, props: props };
+									if (options && "context" in options && "bind" in props) {
+										context.parent = options.context;
+									} else {
+										context.parent = null;
 									}
-								})();
+									data = data.split("\\").join("\\\\");
+									data = data.split("`").join("\\`");
+									var code = `
+										code = (function(props,parent) {
+											var script = "<" + "script>";
+											var endscript = "</" + "script>";
+											return \`${data}\`;
+										}).apply(context,[props,context.parent]);
+									`;
+									//console.log("1",code);
+									console.log(">>OK LOADED DYNAMIC COMPONENT SYNC", code);
+									eval(code);
+									console.log(code)
+									var schema = elc.elementSetPacket(code, { context: context });
+									console.log(">>OK LOADED DYNAMIC COMPONENT CONTEXT SYNC", context);
+									ret.exports[id] = context.module.exports;
+									ret.schema[id] = schema;
+								}
+								
 							}
 							//console.log(JSON.stringify(tag));
 							if ((!skip) && t.name != "id") {
@@ -4927,9 +4985,7 @@ Class.define("Component", {
 										} else {
 											//get on lazy component, require schema to be defined on load component at ' tag.tagName == "Component" '
 											var code = [`
-											  var ret_async = (async ()=>{
-												  var code = "";
-												  var _t1 = this;
+											  
 												  async function sandbox1(schema,code) {
 													  //console.log("RUNNING");
 												  `];
@@ -4973,23 +5029,11 @@ Class.define("Component", {
 													  // ---------------------------------end---------------------------------------
 													  //console.log("RUNNED");
 												  }
-												  if(options && "context" in options) {
-													  //console.log("OK1 IN SCRIPT EVAL");
-													  //this.module = { exports : {} };
-													  //console.log(options.context,value);
-													  ret_async =  sandbox1.apply(options.context,[ret,value]);
-													  //console.log("OK2");
-												  } else {
-													  //console.log("OK3");
-													  ret_async = sandbox1(ret,pattern);
-													  //console.log("OK4");
-												  }
-												  if(options && "context" in options) {
-													  //console.log("W CONTEXT",ret);
-												  } else {
-													  //console.log("WOUT CONTEXT",ret);
-												  }
-												  return ret_async;
+
+												  var ret_async = (async ()=>{
+													var code = "";
+													
+												  
 												  })();
 
 											  `);
@@ -4998,10 +5042,29 @@ Class.define("Component", {
 											try {
 												
 												//console.log(code);
+												//console.log(History);
 												eval(code);
+												var ret_async = null;
+												if(options && "context" in options) {
+													//console.log("OK1 IN SCRIPT EVAL");
+													//this.module = { exports : {} };
+													//console.log(options.context,value);
+													ret_async =  sandbox1.apply(options.context,[ret,value]);
+													//console.log("OK2");
+												} else {
+													//console.log("OK3");
+													ret_async = sandbox1(ret,pattern);
+													//console.log("OK4");
+												}
+												if(options && "context" in options) {
+													//console.log("W CONTEXT",ret);
+												} else {
+													//console.log("WOUT CONTEXT",ret);
+												}
+												
 												await ret_async;
 											} catch (e) {
-												console.log(code);
+												//console.log(code);
 												console.log(e);
 												throw e;
 											}
@@ -5215,50 +5278,59 @@ Class.define("Component", {
 							if (tag.tagName == "Component" && t.name == "src") {
 								await (async () => {
 									//console.log("EVAL COMPONENT SRC", t.value);
-									return new Promise((resolve, reject) => {
-										try {
-											
-											Import({ method: "GET", url: t.value })
-												.done(async (data) => {
-													//console.log("EVAL COMPONENT SRC", data);
-													var context = { module: { exports: {} }, props: props };
-
-													if (options && "context" in options && "bind" in props) {
-														context.parent = options.context;
-													} else {
-														context.parent = null;
-													}
-													// 1) evaluate ${} in the downloaded content, make parent, props, this available could handle programmatically html on components
-													// hard to eval cause it may have `` inside script tag
-													// 2) create new components <if> <endif> <for> <endfor> <while> (bullshit?)
-													
-
-													//console.log(">>OK LOADED DYNAMIC COMPONENT ASYNC", code);
-													//eval(code);
-													var schema = await elc.elementSetPacketAsync(data, { context: context });
-													//console.log(">>OK LOADED DYNAMIC COMPONENT CONTEXT ASYNC", context);
-													ret.exports[id] = context.module.exports;
-													ret.schema[id] = schema;
-													if(options && options.context && check) {
+									var data = null;
+									if(!(t.value in ComponentCache)) {
+										data = await new Promise((resolve, reject) => {
+											try {
+												
+												Import({ method: "GET", url: t.value })
+													.done(async (data) => {
+														//console.log("EVAL COMPONENT SRC", data);
+														ComponentCache[t.value] = data;
+														resolve(data);
 														
-														options.context[id].exports = context.module.exports;
-														options.context[id].schema = schema;
-													}
-													tag.isCustom = true;
-													tag.data = {
-														schema : schema
-													}
-													resolve();
-												})
-												.fail((e) => {
-													alert("" + e);
-													reject();
-												})
-												.send();
-										} catch (e) {
-											alert("" + e);
-										}
-									});
+													})
+													.fail((e) => {
+														alert("error 2:" + e);
+														reject();
+													})
+													.send();
+											} catch (e) {
+												alert("error 1:" + e);
+											}
+										}); 
+									} else {
+										data = ComponentCache[t.value];
+									}
+									var context = { module: { exports: {} }, props: props };
+
+									if (options && "context" in options && "bind" in props) {
+										context.parent = options.context;
+									} else {
+										context.parent = null;
+									}
+									// 1) evaluate ${} in the downloaded content, make parent, props, this available could handle programmatically html on components
+									// hard to eval cause it may have `` inside script tag
+									// 2) create new components <if> <endif> <for> <endfor> <while> (bullshit?)
+									
+
+									//console.log(">>OK LOADED DYNAMIC COMPONENT ASYNC", code);
+									//eval(code);
+									//console.log(data);
+									var schema = await elc.elementSetPacketAsync(data, { context: context });
+									//console.log(">>OK LOADED DYNAMIC COMPONENT CONTEXT ASYNC", context);
+									ret.exports[id] = context.module.exports;
+									ret.schema[id] = schema;
+									if(options && options.context && check) {
+										
+										options.context[id].exports = context.module.exports;
+										options.context[id].schema = schema;
+									}
+									tag.isCustom = true;
+									tag.data = {
+										schema : schema
+									}
+									
 								})();
 								//console.log("after component src eval");
 							}
@@ -5753,7 +5825,7 @@ Class.define("Component", {
 			var parent;
 			if (arguments.length == 1) {
 				parent = this.elementUnshift("Component");
-				return await newPacket(parent.$, arguments[0]);
+				return await newPacketAsync(parent.$, arguments[0]);
 			} else if (arguments.length == 2) {
 				if (
 					Object.prototype.toString.apply(arguments[1]) == "[object Object]" &&
@@ -5807,10 +5879,9 @@ Class.define("Component", {
 			return this.elementPushPacket.apply(this, args);
 		},
 		elementSetPacketAsync: async function () { // = -> means replace
-			
+			this.elementsClear();
 			var args = [];
 			for (var x = 0; x < arguments.length; x++) args.push(arguments[x]);
-			this.elementsClear();
 			//console.log("ELEMENT SET PACKET ASYNC",args);
 			return await this.elementPushPacketAsync.apply(this, args);
 			
@@ -6184,7 +6255,7 @@ Class.define("UI.Body", {
 
 
 
-Class.define("History", {
+Class.define("CHistory", {
 	// behaves not WithEvents, custom on, off and emit
 	// that have an extra argument 'state' besides event and callback
 	ctor: function () {
@@ -6195,6 +6266,7 @@ Class.define("History", {
 		construct: function () {
 			var self = this;
 			if (this.ready) { return; } // singleton
+			this.second_init = false;
 			this.ready = true;
 			this.last_state = "";
 			this.state = "";
@@ -6253,8 +6325,9 @@ Class.define("History", {
 				}
 				return qs;
 			};
-			this.go = function (to, opt) {
-				//console.log("history",to,opt);
+			this.go = async function (to, opt) {
+				
+				console.log("history",to,opt);
 				if (opt == undefined || opt == null || Object.prototype.toString.apply(opt) != "[object Object]") opt = {};
 
 				var to_base = self.parse_state(self.extractHash(to));
@@ -6266,7 +6339,7 @@ Class.define("History", {
 					force = false;
 					console.log("force true");
 				}
-				//console.log( "HISTORY 1:",self.extractHash(to),this.getHash(),to_base,hash_base);
+				console.log( "HISTORY base:",self.extractHash(to),this.getHash(),to_base,hash_base);
 				if (to_base !== hash_base) {
 					console.log("HISTORY 1");
 					//console.log("target hash:",self.extractHash(to)," current hash:",this.getHash());
@@ -6277,19 +6350,24 @@ Class.define("History", {
 
 					//console.log(to_base,to_args);
 
-					//self.emit("load",to_base,to_args); 
-					//alert("HISTORY0");
+					await self.emit("load",to_base,to_args); 
+					//alert("HISTORY0:"+to+":"+to_base+":"+to_args);
 
 					self.setHash(to);
 					self.setState(to_base, to_args);
 					//this.go(to,opt);
+
+					self.last_state = to_base;
+					self.last_args = to_args;
+
+					("callback" in opt) && opt.callback();
 
 				} else if (self.extractHash(to) != this.getHash()) {
 					self.setHash(to);
 					self.setState(to_base, to_args);
 					//alert("HISTORY2");
 				} else if (true || force) {
-					//console.log("HISTORY 4");
+					console.log("HISTORY 4");
 					//console.log("history C",to_base,opt);	
 
 
@@ -6298,19 +6376,22 @@ Class.define("History", {
 
 					self.setState(to_base, to_args);
 
-					//console.log("HISTORY 7");
+					console.log("HISTORY 7");
 					//alert("HISTORY1");
 					self.emit("load", to_base, to_args);
-					//console.log("HISTORY 8");
+					console.log("HISTORY 8");
 
 
-					//console.log("HISTORY 9");
+					console.log("HISTORY 9");
 					self.last_state = to_base;
 					self.last_args = to_args;
 
 					("callback" in opt) && opt.callback();
-					//console.log("HISTORY 10");
+					console.log("HISTORY 10");
 					//alert("HISTORYM");
+				} else {
+					console.log("NOT LOADED AT ALL",to,opt);
+
 				}
 
 				return true;
@@ -6330,12 +6411,16 @@ Class.define("History", {
 				return false;
 			};
 			this.on = function (event, state, handler) {
-				//console.log("installing",event,state);
-
+				console.log("installing",event,state);
+				
 				var target = null;
 				if (event == "load") { target = this.handlers.load; }
 				else if (event == "unload") { target = this.handlers.unload; }
-				else { throw "window.History event '" + event + "' unknown."; }
+				else { 
+					console.log(new Error().stack);
+					throw "window.History event '" + event + "' unknown."; 
+				}
+
 				if (
 					handler != undefined && handler != null &&
 					Object.prototype.toString.apply(handler) == "[object Function]"
@@ -6348,6 +6433,7 @@ Class.define("History", {
 				return true;
 			};
 			this.off = function (event, state, callback) {
+				console.log("uninstalling",event,state);
 				var target = null;
 
 				if (event == "load") { target = this.handlers.load; }
@@ -6429,28 +6515,47 @@ Class.define("History", {
 
 				return true;
 			};
-		},
-		init: function (startPage) {
-
-			var hash = this.getHash();
-			this.setState(this.parse_state(hash), this.parse_args(hash));
-			var self = this;
-			window.addEventListener("hashchange", function (e) {
-				return self.hashchange(e);
-			});
-
-
-			var hash = History.getHash();
-			var hash_arr = hash.split(":");
-			if (hash_arr.length > 0) {
-				if (hash_arr[0] == "") hash_arr[0] = startPage;
-				hash = hash_arr.join(":");
-			} else {
-				hash = startPage;
-			}
-			console.log("BOOT:#" + hash);
-			History.go("#" + hash);
+			this.init = function (startPage) {
+				if(!this.second_init) {
+					alert("FIRST INIT");
+					var hash = this.getHash();
+					this.setState(this.parse_state(hash), this.parse_args(hash));
+					var self = this;
+					window.addEventListener("hashchange", function (e) {
+						return self.hashchange(e);
+					});
+					var hash = CHistory.getHash();
+					var hash_arr = hash.split(":");
+					if (hash_arr.length > 0) {
+						if (hash_arr[0] == "") hash_arr[0] = startPage;
+						hash = hash_arr.join(":");
+					} else {
+						hash = startPage;
+					}
+					console.log("BOOT:#" + hash);
+					this.second_init = true;
+					CHistory.go("#" + hash);
+				} else {
+					var hash = this.getHash();
+					this.setState(this.parse_state(hash), this.parse_args(hash));
+					var self = this;
+					var hash = CHistory.getHash();
+					var hash_arr = hash.split(":");
+					if (hash_arr.length > 0) {
+						if (hash_arr[0] == "") hash_arr[0] = startPage;
+						hash = hash_arr.join(":");
+					} else {
+						hash = startPage;
+					}
+					console.log("BOOT:#" + hash);
+					this.second_init = true;
+					CHistory.go("#" + startPage);
+					alert("SECOND INIT"+":"+hash+":"+startPage);
+				}
+			};
+				
 		}
+		
 	}
 });
 
@@ -6469,6 +6574,8 @@ var RouterRoute = (function () {
 		options = options || {};
 		this.name = options.name;
 		this.parent = options.parent;
+		this.load = options.load;
+		this.unload = options.unload;
 		pages[options.name] = this;
 		return this;
 	}
@@ -6479,38 +6586,58 @@ var RouterRoute = (function () {
 			return this;
 		},
 		proto: {
+			list : function() {
+				var ret = [];
+				for(var key in pages) {
+					ret.push(key);
+				}
+				return ret;
+			},
+			has : function(str) {
+				for(var key in pages) if(key == str) return true;
+				return false;
+			},
 			insert: function (name, load_callback, unload_callback) {
+				console.log("ROUTE INSERT ",name);
 				var self = this;
-				var p = RouterRoute({
-					name: name,
-					parent: this.target
-				});
+				
+				var _load = null;
+				var _unload = null;
 				var type_load_callback = Object.prototype.toString.apply(load_callback);
 				if (type_load_callback != "[object Function]" && type_load_callback != "[object AsyncFunction]") throw new Error("load_callback must be function");
-				History.on("load", name, function (state, args) {
+				_load = function (state, args) {
 					console.log("loading " + name);
 					console.log("state:", JSON.stringify(state));
 					console.log("args:", JSON.stringify(args));
 
 					load_callback && load_callback.apply(p, [args]);
-				});
+				};
+				CHistory.on("load", name, _load);
 				if (unload_callback) {
-					History.on("unload", name, function (state, args) {
+					_unload = function (state, args) {
 						console.log("unloading " + name);
 						console.log("state:", JSON.stringify(state));
 						console.log("args:", JSON.stringify(args));
 
 						unload_callback.apply(p, [args]);
-					});
+					};
+					CHistory.on("unload", name, _unload);
 				} else {
-					History.on("unload", name, function (state, args) {
+					_unload = function (state, args) {
 						console.log("unloading " + name);
 						console.log("state:", JSON.stringify(state));
 						console.log("args:", JSON.stringify(args));
 						UI.Body.elementsClear();
-						//unload_callback.apply(p,[args]);
-					});
+					};
+					CHistory.on("unload", name, _unload);
 				}
+				var p = RouterRoute({
+					name: name,
+					parent: this.target,
+					load : _load,
+					unload : _unload
+				});
+
 				return p;
 			},
 			replace: function (name, load_callback, unload_callback) {
@@ -6518,6 +6645,14 @@ var RouterRoute = (function () {
 				return this.insert(name, load_callback, unload_callback);
 			},
 			remove: function (name) {
+				if(name in pages) {
+					if(pages[name].load) {
+						CHistory.off("load",name,pages[name].load);
+					}
+					if(pages[name].unload) {
+						CHistory.off("unload",name,pages[name].unload);
+					}
+				}
 				delete pages[name];
 			}
 		}
@@ -6525,10 +6660,10 @@ var RouterRoute = (function () {
 	return RouterRoute;
 })();
 
-
-History = Class.create("History");
-
-
+Object.defineProperty(window,"CHistory",{
+	value:Class.create("CHistory"),
+	writeable:false
+});
 
 UI.init = function (callback) {
 
